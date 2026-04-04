@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HandoverAI Control Center - Simulation Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <header class="app-header">
+        <div class="app-title">
+            <span>HandoverAI Control Center</span>
+            <span class="app-subtitle">| LEO Constellation Management Simulation</span>
+        </div>
+        <div class="system-status" style="font-size: 0.75rem; font-weight: 700; color: #10b981;">
+            • SYSTEM OPERATIONAL
+        </div>
+    </header>
+
+    <div class="dashboard">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar">
+            <section class="panel-section">
+                <span class="section-label">Simulation Parameters</span>
+                <div class="form-group">
+                    <label>Satellite Constellation Size</label>
+                    <input id="satCount" type="number" min="3" max="48" value="12" />
+                </div>
+                <div class="form-group">
+                    <label>UE Velocity (km/h)</label>
+                    <input id="ueSpeed" type="range" min="10" max="1200" value="700" />
+                </div>
+                <div class="form-group">
+                    <label>Simulation Length (Steps)</label>
+                    <input id="steps" type="number" min="60" max="1200" value="300" />
+                </div>
+                <div class="form-group">
+                    <label>Playback Interval (ms)</label>
+                    <input id="speedMs" type="range" min="80" max="600" value="220" />
+                </div>
+            </section>
+
+            <section class="panel-section">
+                <span class="section-label">Execution Controls</span>
+                <div class="btn-grid">
+                    <button id="runBtn" class="btn primary">Start New Simulation</button>
+                    <button id="randomizeBtn" class="btn secondary">Reset Orbit Data</button>
+                    <button id="playBtn" class="btn secondary">Pause Execution</button>
+                </div>
+            </section>
+
+            <section class="panel-section">
+                <span class="section-label">Step Monitor</span>
+                <div id="stepLabel" style="font-size: 0.85rem; font-weight: 700; color: var(--color-primary); text-align: center; border: 1px dashed var(--border-color); padding: 12px; border-radius: var(--radius);">
+                    READY TO INITIALIZE
+                </div>
+            </section>
+        </aside>
+
+        <!-- Main Dashboard Monitoring Area -->
+        <main class="monitor-area">
+            <!-- Metrics Monitoring Row -->
+            <div class="metrics-row">
+                <div class="metric-box ai">
+                    <div class="metric-head">
+                        <span class="metric-title">Model-Driven Serving (AI)</span>
+                        <span style="font-size: 0.65rem; background: var(--color-ai); color: white; padding: 2px 6px; border-radius: 4px; font-weight: 700;">ACTIVE</span>
+                    </div>
+                    <div class="metric-grid">
+                        <div class="metric-stat">
+                            <span class="stat-label">Handovers Executed</span>
+                            <span id="hoModel" class="stat-value">-</span>
+                        </div>
+                        <div class="metric-stat">
+                            <span class="stat-label">Average SNR (dB)</span>
+                            <span id="snrModel" class="stat-value">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metric-box base">
+                    <div class="metric-head">
+                        <span class="metric-title">Baseline Heuristic Strategy</span>
+                        <span style="font-size: 0.65rem; background: var(--color-baseline); color: white; padding: 2px 6px; border-radius: 4px; font-weight: 700;">ACTIVE</span>
+                    </div>
+                    <div class="metric-grid">
+                        <div class="metric-stat">
+                            <span class="stat-label">Expected Handovers</span>
+                            <span id="hoBase" class="stat-value">-</span>
+                        </div>
+                        <div class="metric-stat">
+                            <span class="stat-label">Average SNR (dB)</span>
+                            <span id="snrBase" class="stat-value">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visualization Section -->
+            <section class="visual-container">
+                <canvas id="map" width="800" height="600"></canvas>
+                <div class="map-overlay">
+                    <div class="legend-item"><span class="dot" style="background: var(--color-ai)"></span> Serving Node</div>
+                    <div class="legend-item"><span class="dot" style="background: var(--color-baseline)"></span> Target Candidate</div>
+                    <div class="legend-item"><span class="dot" style="background: #cbd5e1; border: 1px solid #94a3b8;"></span> Orbital Satellites</div>
+                    <div class="legend-item"><span class="dot" style="background: #1e293b;"></span> User Equipment</div>
+                </div>
+            </section>
+
+            <!-- Chart Footer Area -->
+            <section class="charts-footer">
+                <div class="chart-box">
+                    <div class="chart-title">Connection History (Timeline)</div>
+                    <canvas id="timeline" width="440" height="150"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">Link Signal Quality (dB)</div>
+                    <canvas id="snrChart" width="440" height="150"></canvas>
+                </div>
+            </section>
+
+            <!-- System Diagnostics & Status -->
+            <div id="statusLine" class="status-summary">System initialized. Awaiting user action.</div>
+
+            <!-- Detailed Documentation Panel -->
+            <section class="info-panel">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <h3>Operating Principles</h3>
+                        <p>This simulator compares CatBoost-optimized handover decisions against classic RSS-based policies. The AI model accounts for RSRP, SINR, UE velocity, and elevation to reduce signal loss during orbital transitions.</p>
+                    </div>
+                    <div class="info-item">
+                        <h3>Inference Engine</h3>
+                        <p>Real-time inference is handled by an ONNX model running directly in the browser environment. Feature normalization is performed by a dedicated preprocessing ONNX graph prior to classification.</p>
+                    </div>
+                </div>
+            </section>
+
+            <footer class="footer-copy">
+                HandoverAI Monitoring System - Version 2.0.4.5 &copy; 2026 Engineering Lab Operations
+            </footer>
+        </main>
+    </div>
+
+    <!-- Core Simulation Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
