@@ -1,7 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
 const mapCanvas = $("map");
-const snrCanvas = $("snrChart");
 const speedMsInput = $("speedMs");
 const runBtn = $("runBtn");
 const randomizeBtn = $("randomizeBtn");
@@ -11,11 +10,9 @@ const stepLabel = $("stepLabel");
 const statusLine = $("statusLine");
 const sidebarToggle = $("sidebarToggle");
 const sidebar = $("controlSidebar");
-const funModeToggle = $("funModeToggle");
-
 const deterministicToggle = $("deterministicToggle");
+const fairEvalToggle = $("fairEvalToggle");
 const fixedSeedInput = $("fixedSeed");
-
 const ueSpeedInput = $("ueSpeed");
 const baselineHystInput = $("baselineHyst");
 const ueSpeedVal = $("ueSpeedVal");
@@ -27,11 +24,25 @@ const healthLoadTime = $("healthLoadTime");
 const healthInferLatency = $("healthInferLatency");
 const healthLastInfer = $("healthLastInfer");
 
+const modelStatusCat = $("modelStatusCat");
+const modelStatusXgb = $("modelStatusXgb");
+const modelStatusGbm = $("modelStatusGbm");
+
+const hoCat = $("hoCat");
+const snrCat = $("snrCat");
+const hoXgb = $("hoXgb");
+const snrXgb = $("snrXgb");
+const hoGbm = $("hoGbm");
+const snrGbm = $("snrGbm");
+
+const hoCatBase = $("hoCatBase");
+const snrCatBase = $("snrCatBase");
+const hoXgbBase = $("hoXgbBase");
+const snrXgbBase = $("snrXgbBase");
+const hoGbmBase = $("hoGbmBase");
+const snrGbmBase = $("snrGbmBase");
+
 const summaryPanel = $("summaryPanel");
-const summaryAiHo = $("summaryAiHo");
-const summaryBaseHo = $("summaryBaseHo");
-const summarySnrDelta = $("summarySnrDelta");
-const summaryHoDelta = $("summaryHoDelta");
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -42,6 +53,69 @@ satImageLoader.onload = () => {
 };
 satImageLoader.src = "Sat.png";
 
+const FEATURE_NAMES = [
+  "ue_speed",
+  "sat_elev",
+  "rsrp_best",
+  "sinr_best",
+  "throughput",
+  "time_normalized",
+  "velocity_factor",
+  "elevation_quality",
+  "rsrp_best_ma",
+];
+const N_FEATURES = FEATURE_NAMES.length;
+
+const ENGINES = {
+  cat: {
+    key: "cat",
+    label: "CatBoost",
+    color: "#1169b8",
+    metricIds: { ho: hoCat, snr: snrCat, hoBase: hoCatBase, snrBase: snrCatBase },
+    chartId: "snrChartCat",
+    statusEl: modelStatusCat,
+    scalerPath: "feature_scaler.onnx",
+    modelPath: "catboost_model.onnx",
+    phaseOffset: 0.0,
+    speedFactor: 1.0,
+  },
+  xgb: {
+    key: "xgb",
+    label: "XGBoost",
+    color: "#7c3aed",
+    metricIds: { ho: hoXgb, snr: snrXgb, hoBase: hoXgbBase, snrBase: snrXgbBase },
+    chartId: "snrChartXgb",
+    statusEl: modelStatusXgb,
+    scalerPath: "xgb_scaler.onnx",
+    modelPath: "xgb_model.onnx",
+    phaseOffset: 1.9,
+    speedFactor: 0.92,
+  },
+  gbm: {
+    key: "gbm",
+    label: "GradientBoost",
+    color: "#ca8a04",
+    metricIds: { ho: hoGbm, snr: snrGbm, hoBase: hoGbmBase, snrBase: snrGbmBase },
+    chartId: "snrChartGbm",
+    statusEl: modelStatusGbm,
+    scalerPath: "gb_scaler.onnx",
+    modelPath: "gb_model.onnx",
+    phaseOffset: 3.7,
+    speedFactor: 1.08,
+  },
+};
+
+for (const engine of Object.values(ENGINES)) {
+  engine.scalerSession = null;
+  engine.modelSession = null;
+  engine.ready = false;
+  engine.pending = !engine.scalerPath || !engine.modelPath;
+  engine.error = null;
+  engine.loadMs = null;
+  engine.lastInferMs = null;
+  engine.lastInferAt = null;
+}
+
 const defaultControls = {
   satCount: 12,
   ueSpeed: 700,
@@ -49,6 +123,7 @@ const defaultControls = {
   baselineHyst: 5,
   speedMs: 220,
   deterministic: false,
+  fairEval: false,
   seed: 4242,
   funMode: true,
 };
@@ -62,62 +137,105 @@ const funStatusLines = [
 
 function updateSliderLabels() {
   if (ueSpeedVal) ueSpeedVal.textContent = ueSpeedInput ? ueSpeedInput.value : "-";
-  if (baselineHystVal) {
-    const h = baselineHystInput ? Number(baselineHystInput.value).toFixed(1) : "-";
-    baselineHystVal.textContent = h;
-  }
+  if (baselineHystVal) baselineHystVal.textContent = baselineHystInput ? Number(baselineHystInput.value).toFixed(1) : "-";
   if (speedMsVal) speedMsVal.textContent = speedMsInput ? speedMsInput.value : "-";
 }
 
-function setLoadingUi(loading, text) {
+function setLoadingUi(loading) {
   if (runBtn) {
     runBtn.disabled = loading;
     runBtn.textContent = loading ? "Loading Models..." : "Start New Simulation";
   }
   if (playBtn) playBtn.disabled = loading;
-  if (healthModelState && text) healthModelState.textContent = text;
-}
-
-function showSummary(sim) {
-  if (!summaryPanel || !sim) return;
-  const steps = Math.max(sim.step, 1);
-  const aiHo = sim.handoverAt.filter(Boolean).length;
-  const baseHo = sim.baseHandovers;
-  const avgSnrModel = sim.modelSnrSum / steps;
-  const avgSnrBase = sim.baseSnrSum / steps;
-  const snrDelta = avgSnrModel - avgSnrBase;
-  const hoReduction = baseHo - aiHo;
-
-  summaryAiHo.textContent = String(aiHo);
-  summaryBaseHo.textContent = String(baseHo);
-  summarySnrDelta.textContent = `${snrDelta >= 0 ? "+" : ""}${snrDelta.toFixed(2)} dB`;
-  summaryHoDelta.textContent = `${hoReduction >= 0 ? "+" : ""}${hoReduction}`;
-  summaryPanel.classList.remove("hidden");
-}
-
-function hideSummary() {
-  if (summaryPanel) summaryPanel.classList.add("hidden");
 }
 
 function setFunMode(enabled) {
   document.body.classList.toggle("fun-mode", Boolean(enabled));
 }
 
+function setEnginePill(engine, text, pending = false) {
+  if (!engine.statusEl) return;
+  engine.statusEl.textContent = text;
+  engine.statusEl.classList.toggle("pending", pending);
+}
 
-function resetAllControls() {
-  $("satCount").value = defaultControls.satCount;
-  $("ueSpeed").value = defaultControls.ueSpeed;
-  $("steps").value = defaultControls.steps;
-  $("baselineHyst").value = defaultControls.baselineHyst;
-  $("speedMs").value = defaultControls.speedMs;
-  deterministicToggle.checked = defaultControls.deterministic;
-  fixedSeedInput.value = defaultControls.seed;
-  fixedSeedInput.disabled = !defaultControls.deterministic;
-  funModeToggle.checked = defaultControls.funMode;
-  setFunMode(defaultControls.funMode);
-  updateSliderLabels();
-  hideSummary();
-  run();
+function updateModelHealthPanel() {
+  const all = Object.values(ENGINES);
+  const ready = all.filter((e) => e.ready).length;
+  const pending = all.filter((e) => e.pending).length;
+  const errors = all.filter((e) => e.error).length;
+
+  if (healthModelState) {
+    if (errors > 0) healthModelState.textContent = `${ready}/${all.length} Ready, ${errors} Error`;
+    else if (pending > 0) healthModelState.textContent = `${ready}/${all.length} Ready, ${pending} Pending`;
+    else healthModelState.textContent = `${ready}/${all.length} Ready`;
+  }
+
+  const loaded = all.filter((e) => e.loadMs !== null);
+  if (healthLoadTime) {
+    if (loaded.length === 0) healthLoadTime.textContent = "-";
+    else {
+      const total = loaded.reduce((s, e) => s + e.loadMs, 0);
+      healthLoadTime.textContent = `${total} ms`;
+    }
+  }
+
+  const inferred = all.filter((e) => e.lastInferMs !== null);
+  if (healthInferLatency) {
+    if (inferred.length === 0) healthInferLatency.textContent = "-";
+    else {
+      const avg = Math.round(inferred.reduce((s, e) => s + e.lastInferMs, 0) / inferred.length);
+      healthInferLatency.textContent = `${avg} ms`;
+    }
+  }
+
+  const latest = all
+    .filter((e) => e.lastInferAt instanceof Date)
+    .sort((a, b) => b.lastInferAt - a.lastInferAt)[0];
+  if (healthLastInfer) healthLastInfer.textContent = latest ? latest.lastInferAt.toLocaleTimeString() : "-";
+}
+
+function resetMetricViews() {
+  const all = Object.values(ENGINES);
+  for (const e of all) {
+    if (e.metricIds.ho) e.metricIds.ho.textContent = "-";
+    if (e.metricIds.snr) e.metricIds.snr.textContent = "-";
+    if (e.metricIds.hoBase) e.metricIds.hoBase.textContent = "-";
+    if (e.metricIds.snrBase) e.metricIds.snrBase.textContent = "-";
+  }
+}
+
+function hideSummary() {
+  if (summaryPanel) summaryPanel.classList.add("hidden");
+}
+
+function showSummary(sim) {
+  if (!summaryPanel || !sim) return;
+  const candidates = Object.values(sim.agents).filter((a) => a.ready && a.stepCount > 0);
+  if (candidates.length === 0) {
+    hideSummary();
+    return;
+  }
+
+  const grid = summaryPanel.querySelector('.summary-grid');
+  if (grid) {
+      grid.innerHTML = '';
+      for (const a of candidates) {
+        const avgSnr = a.snrSum / Math.max(a.stepCount, 1);
+        const baseAvgSnr = a.baseline.snrSum / Math.max(a.baseline.stepCount, 1);
+        grid.innerHTML += `
+          <div class="summary-item">
+              <span class="summary-label">${a.label} Final Results</span>
+              <span class="summary-value" style="font-size: 0.82rem; line-height: 1.4;">
+                AI: ${a.handovers} HO, ${avgSnr.toFixed(1)} dB<br>
+                Base: ${a.baseline.handovers} HO, ${baseAvgSnr.toFixed(1)} dB
+              </span>
+          </div>
+        `;
+      }
+  }
+
+  summaryPanel.classList.remove("hidden");
 }
 
 function mulberry32(a) {
@@ -143,13 +261,9 @@ function readConfig() {
     speed: getInputValue("ueSpeed", 700) / 3.6,
     baselineHyst: getInputValue("baselineHyst", 5.0),
     dt: 5,
-    hyst: 1.2,
     minSnr: -5,
+    fairEval: fairEvalToggle ? fairEvalToggle.checked : true,
     seed: deterministic ? fixedSeed : Math.floor(Math.random() * 99999),
-    wSnr: 1.4,
-    wElev: 1.0,
-    wLoad: 1.2,
-    wHo: 2.5,
   };
 }
 
@@ -163,7 +277,7 @@ function generateSatellites(n, rng) {
       phase: rng() * Math.PI * 2,
       incline: rng() * 0.4 - 0.2,
       load: 0.2 + rng() * 0.7,
-      rsrpMA: null,
+      rsrpMAByModel: {},
     });
   }
   return sats;
@@ -183,265 +297,310 @@ function userPosition(travel, phaseOffset = 0) {
   return { x: Math.cos(ang) * r, y: Math.sin(ang) * r };
 }
 
-let scalerSession = null;
-let modelSession = null;
-let featureNames = [];
-let nFeatures = 0;
-let modelReady = false;
-let modelError = null;
-let loadTimeMs = null;
-let lastInferMs = null;
-let lastDecision = "-";
 let modelLoadPromise = null;
+let modelError = null;
+
+async function loadEngineSessions(engine) {
+  if (engine.pending) {
+    setEnginePill(engine, "Pending Path", true);
+    return;
+  }
+  const t0 = performance.now();
+  setEnginePill(engine, "Loading", false);
+  engine.scalerSession = await ort.InferenceSession.create(engine.scalerPath);
+  engine.modelSession = await ort.InferenceSession.create(engine.modelPath);
+  engine.ready = true;
+  engine.loadMs = Math.round(performance.now() - t0);
+  setEnginePill(engine, "Ready", false);
+}
 
 async function loadModels() {
-  if (modelReady) {
-    if (healthModelState) healthModelState.textContent = "Ready";
-    if (healthLoadTime && loadTimeMs !== null) healthLoadTime.textContent = `${loadTimeMs} ms`;
-    return;
-  }
-  if (modelError) {
-    if (healthModelState) healthModelState.textContent = "Error";
-    return;
-  }
   if (modelLoadPromise) {
     await modelLoadPromise;
     return;
   }
-
   modelLoadPromise = (async () => {
-  try {
-    const loadStart = performance.now();
-    setLoadingUi(true, "Loading");
-    statusLine.textContent = "Loading models...";
+    try {
+      setLoadingUi(true);
+      statusLine.textContent = "Loading model sessions...";
+      if (!window.ort) throw new Error("onnxruntime-web not loaded.");
+      window.ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
 
-    if (!window.ort) throw new Error("onnxruntime-web not loaded. Check CDN.");
-
-    window.ort.env.wasm.wasmPaths =
-      "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
-
-    featureNames = [
-      "ue_speed", "sat_elev", "rsrp_best", "sinr_best",
-      "throughput", "time_normalized", "velocity_factor",
-      "elevation_quality", "rsrp_best_ma"
-    ];
-    nFeatures = 9;
-
-    scalerSession = await ort.InferenceSession.create("feature_scaler.onnx");
-    modelSession = await ort.InferenceSession.create("catboost_model.onnx");
-
-    modelReady = true;
-    loadTimeMs = Math.round(performance.now() - loadStart);
-    statusLine.textContent = "Models loaded. Live decisions are model-driven.";
-    if (healthModelState) healthModelState.textContent = "Ready";
-    if (healthLoadTime) healthLoadTime.textContent = `${loadTimeMs} ms`;
-    console.log("Scaler inputs:", scalerSession.inputNames);
-    console.log("Scaler outputs:", scalerSession.outputNames);
-    console.log("Model inputs:", modelSession.inputNames);
-    console.log("Model outputs:", modelSession.outputNames);
-  } catch (err) {
-    modelError = err;
-    statusLine.textContent = `Model load failed: ${err.message}`;
-    if (healthModelState) healthModelState.textContent = "Error";
-    console.error(err);
-  } finally {
-    setLoadingUi(false, modelReady ? "Ready" : "Error");
-    modelLoadPromise = null;
-  }
+      for (const engine of Object.values(ENGINES)) {
+        try {
+          await loadEngineSessions(engine);
+        } catch (err) {
+          engine.error = err;
+          engine.ready = false;
+          setEnginePill(engine, "Error", true);
+        }
+      }
+      updateModelHealthPanel();
+      const readyCount = Object.values(ENGINES).filter((e) => e.ready).length;
+      if (readyCount === 0) {
+        modelError = new Error("No model is ready. Provide valid ONNX paths.");
+        statusLine.textContent = "No model ready. Provide paths for pending models.";
+      } else {
+        statusLine.textContent = `${readyCount} model(s) ready. You can run simulation now.`;
+      }
+    } catch (err) {
+      modelError = err;
+      statusLine.textContent = `Model load failed: ${err.message}`;
+    } finally {
+      setLoadingUi(false);
+      updateModelHealthPanel();
+      modelLoadPromise = null;
+    }
   })();
 
   await modelLoadPromise;
 }
 
-function buildFeatureVector(bestMetric, cfg, sim) {
+function buildFeatureVector(metric, cfg, sim) {
   const map = {
-    ue_speed: cfg.speed,
-    sat_elev: bestMetric.elev,
-    rsrp_best: bestMetric.rsrp,
-    sinr_best: bestMetric.sinr,
-    throughput: bestMetric.throughput,
+    ue_speed: metric.currentUEVelocity,
+    sat_elev: metric.elev,
+    rsrp_best: metric.rsrp,
+    sinr_best: metric.sinr,
+    throughput: metric.throughput,
     time_normalized: (sim.t % 600) / 600,
-    velocity_factor: clamp(cfg.speed / 350, 0, 1),
-    elevation_quality: bestMetric.elev,
-    rsrp_best_ma: bestMetric.rsrpMA,
+    velocity_factor: clamp(metric.currentUEVelocity / 350, 0, 1),
+    elevation_quality: metric.elev,
+    rsrp_best_ma: metric.rsrpMA,
   };
-  const order = featureNames.length ? featureNames : Object.keys(map);
-  return order.map(k => (k in map ? map[k] : 0));
+  return FEATURE_NAMES.map((k) => (k in map ? map[k] : 0));
 }
 
-async function modelScore(features) {
-  if (!modelReady) throw new Error("Model not ready");
+async function modelScore(engine, features) {
+  const rawTensor = new ort.Tensor("float32", Float32Array.from(features), [1, N_FEATURES]);
+  const scaledOut = await engine.scalerSession.run({ [engine.scalerSession.inputNames[0]]: rawTensor });
+  const scaledTensor = scaledOut[engine.scalerSession.outputNames[0]];
+  const modelOut = await engine.modelSession.run({ [engine.modelSession.inputNames[0]]: scaledTensor });
 
-  const rawTensor = new ort.Tensor("float32", Float32Array.from(features), [1, nFeatures]);
-  const scaledOut = await scalerSession.run({ [scalerSession.inputNames[0]]: rawTensor });
-  const scaledTensor = scaledOut[scalerSession.outputNames[0]];
+  const labelTensor = modelOut.label || modelOut[engine.modelSession.outputNames[0]];
+  const label = labelTensor && labelTensor.data && labelTensor.data.length
+    ? Number(labelTensor.data[0])
+    : 0;
 
-  const modelOut = await modelSession.run(
-    { [modelSession.inputNames[0]]: scaledTensor },
-    ["label"]
-  );
+  let confidence = label === 1 ? 1 : 0;
+  for (const value of Object.values(modelOut)) {
+    try {
+      if (value && value.data && value.data.length >= 2) {
+        const p0 = Number(value.data[0]);
+        const p1 = Number(value.data[1]);
+        if (Number.isFinite(p0) && Number.isFinite(p1)) {
+          confidence = p1;
+          break;
+        }
+      }
+    } catch {
+      // Ignore non-tensor properties that throw when data is accessed
+    }
+  }
 
-  const label = Number(modelOut.label.data[0]);
-
-  return label === 1 ? 0.85 + Math.random() * 0.1 : 0.1 + Math.random() * 0.15;
+  confidence = clamp(confidence, 0, 1);
+  return { label, confidence };
 }
 
 function createLiveSim(cfg) {
   const rng = mulberry32(cfg.seed || 1);
-  const phaseOffset = ((cfg.seed || 1) % 1000) / 1000 * Math.PI * 2;
   const sats = generateSatellites(cfg.satCount, rng);
+  const agents = {};
+  const sharedPhaseOffset = ((cfg.seed || 1) % 1000) / 1000 * Math.PI * 2;
+  const sharedUserPos = userPosition(0, sharedPhaseOffset);
+
+  for (const engine of Object.values(ENGINES)) {
+    agents[engine.key] = {
+      key: engine.key,
+      label: engine.label,
+      color: engine.color,
+      ready: engine.ready,
+      current: -1,
+      handovers: 0,
+      snrSum: 0,
+      stepCount: 0,
+      currentUEVelocity: cfg.speed * engine.speedFactor,
+      ueTravel: 0,
+      phaseOffset: engine.phaseOffset,
+      snrSeries: [],
+      lastScore: null,
+      lastDecisionLabel: 0,
+      activeSeries: [],
+      bestSeries: [],
+      currentPos: cfg.fairEval ? { ...sharedUserPos } : { x: 0, y: 0 },
+      baseline: {
+        current: -1,
+        handovers: 0,
+        snrSum: 0,
+        stepCount: 0,
+        snrSeries: [],
+      },
+    };
+  }
+
   return {
-    cfg, rng, sats,
-    phaseOffset,
-    t: 0, step: 0,
-    current: -1,
-    active: [], best: [], snrActive: [], snrBaseline: [],
-    outages: [], handoverAt: [], baseHandoverAt: [],
-    lastScore: 0.5, lastBestIdx: -1,
-    currentUEVelocity: cfg.speed,
-    ueTravel: 0,
-    baseCurrent: -1,
-    baseHandovers: 0,
-    baseSnrSum: 0,
-    modelSnrSum: 0,
-    lastMetrics: null,
-    lastHandoverStep: null,
+    cfg,
+    rng,
+    sats,
+    agents,
+    t: 0,
+    step: 0,
+    sharedUEVelocity: cfg.speed,
+    sharedUETravel: 0,
+    sharedPhaseOffset,
+    sharedUserPos,
     completed: false,
+    lastStepRuntimeMs: null,
   };
 }
 
 async function stepSim(sim) {
-  const { cfg, rng, sats } = sim;
+  const tStart = performance.now();
+  const frameNoise = (sim.rng() - 0.5) * 0.5;
+  const fairEval = Boolean(sim.cfg.fairEval);
 
-  const drift = (rng() - 0.5) * 1.5;
-  sim.currentUEVelocity = clamp(sim.currentUEVelocity + drift, cfg.speed * 0.75, cfg.speed * 1.25);
-  sim.ueTravel += sim.currentUEVelocity;
+  if (fairEval) {
+    const drift = (sim.rng() - 0.5) * 1.5;
+    sim.sharedUEVelocity = clamp(
+      sim.sharedUEVelocity + drift,
+      sim.cfg.speed * 0.75,
+      sim.cfg.speed * 1.25
+    );
+    sim.sharedUETravel += sim.sharedUEVelocity;
+    sim.sharedUserPos = userPosition(sim.sharedUETravel, sim.sharedPhaseOffset);
+  }
 
-  const user = userPosition(sim.ueTravel, sim.phaseOffset);
-  const frameNoise = (rng() - 0.5) * 0.5;
+  for (const engine of Object.values(ENGINES)) {
+    const agent = sim.agents[engine.key];
+    if (!agent.ready) continue;
 
-  const metrics = sats.map((sat, idx) => {
-    const pos = satPosition(sat, sim.t);
-    const dx = pos.x - user.x;
-    const dy = pos.y - user.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    const refDist = 80;
-    const pathLoss = 35 * Math.log10(Math.max(dist, 1) / refDist);
-    const elev = clamp(1 - dist / 300, 0, 1);
-    const elevBonus = elev * 4;
-    const snr = 24 - pathLoss + elevBonus + frameNoise;
-    const rsrp = -70 - pathLoss + elevBonus + frameNoise * 1.5;
-    const sinr = snr - sat.load * 5;
-    const throughput = clamp((sinr + 5) * 10 * (1 - sat.load), 0, 400);
-
-    if (sat.rsrpMA === null) {
-      sat.rsrpMA = rsrp;
+    if (fairEval) {
+      agent.currentUEVelocity = sim.sharedUEVelocity;
+      agent.ueTravel = sim.sharedUETravel;
+      agent.currentPos = sim.sharedUserPos;
     } else {
-      sat.rsrpMA = 0.7 * sat.rsrpMA + 0.3 * rsrp;
+      const drift = (sim.rng() - 0.5) * 1.5;
+      const baseSpeed = sim.cfg.speed * engine.speedFactor;
+      agent.currentUEVelocity = clamp(agent.currentUEVelocity + drift, baseSpeed * 0.75, baseSpeed * 1.25);
+      agent.ueTravel += agent.currentUEVelocity;
+      agent.currentPos = userPosition(agent.ueTravel, agent.phaseOffset);
+    }
+    const user = agent.currentPos;
+
+    const metrics = sim.sats.map((sat) => {
+      const pos = satPosition(sat, sim.t);
+      const dx = pos.x - user.x;
+      const dy = pos.y - user.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const refDist = 80;
+      const pathLoss = 35 * Math.log10(Math.max(dist, 1) / refDist);
+      const elev = clamp(1 - dist / 300, 0, 1);
+      const elevBonus = elev * 4;
+      const snr = 24 - pathLoss + elevBonus + frameNoise;
+      const rsrp = -70 - pathLoss + elevBonus + frameNoise * 1.5;
+      const sinr = snr - sat.load * 5;
+      const throughput = clamp((sinr + 5) * 10 * (1 - sat.load), 0, 400);
+
+      if (sat.rsrpMAByModel[engine.key] === undefined) sat.rsrpMAByModel[engine.key] = rsrp;
+      else sat.rsrpMAByModel[engine.key] = 0.7 * sat.rsrpMAByModel[engine.key] + 0.3 * rsrp;
+
+      return { snr, elev, rsrp, sinr, throughput, rsrpMA: sat.rsrpMAByModel[engine.key], dist, pos };
+    });
+
+    let bestIdx = -1;
+    let minDist = Infinity;
+    for (let i = 0; i < metrics.length; i++) {
+      if (metrics[i].dist < minDist) {
+        minDist = metrics[i].dist;
+        bestIdx = i;
+      }
     }
 
-    return { idx, snr, elev, load: sat.load, pos, rsrp, sinr, throughput, rsrpMA: sat.rsrpMA, dist };
-  });
+    const activeMetric = agent.current !== -1 ? metrics[agent.current] : metrics[bestIdx];
+    const features = buildFeatureVector({ ...activeMetric, currentUEVelocity: agent.currentUEVelocity }, sim.cfg, sim);
+    agent.lastMetrics = metrics;
+    agent.lastBestIdx = bestIdx;
 
-  let bestIdx = -1;
-  let minDist = Infinity;
-  for (let i = 0; i < metrics.length; i++) {
-    if (metrics[i].dist < minDist) {
-      minDist = metrics[i].dist;
-      bestIdx = i;
+    try {
+      const inferStart = performance.now();
+      const out = await modelScore(engine, features);
+      agent.lastDecisionLabel = out.label;
+      agent.lastScore = out.confidence;
+      engine.lastInferMs = Math.round(performance.now() - inferStart);
+      engine.lastInferAt = new Date();
+    } catch (err) {
+      agent.lastDecisionLabel = 0;
+      agent.lastScore = null;
+      agent.lastError = err.message || String(err);
     }
-  }
 
-  sim.lastMetrics = metrics;
-  const bestMetric = metrics[bestIdx];
-  const activeMetric = sim.current !== -1 ? metrics[sim.current] : bestMetric;
-
-  const featureVector = buildFeatureVector(activeMetric, cfg, sim);
-  let score = 0.5;
-  try {
-    const inferStart = performance.now();
-    score = await modelScore(featureVector);
-    lastInferMs = Math.round(performance.now() - inferStart);
-    lastDecision = score >= 0.5 ? "Switch" : "Stay";
-    if (healthInferLatency) healthInferLatency.textContent = `${lastInferMs} ms`;
-    if (healthLastInfer) healthLastInfer.textContent = new Date().toLocaleTimeString();
-  } catch (err) {
-    score = 0.5;
-  }
-  sim.lastScore = score;
-  sim.lastBestIdx = bestIdx;
-
-  let handover = false;
-  if (sim.current === -1) {
-    if (bestIdx !== -1 && metrics[bestIdx].snr >= cfg.minSnr) {
-      sim.current = bestIdx;
+    if (agent.current === -1 && bestIdx !== -1 && metrics[bestIdx].snr >= sim.cfg.minSnr) {
+      agent.current = bestIdx;
+    } else if (bestIdx !== -1 && bestIdx !== agent.current) {
+      agent.current = bestIdx;
+      agent.handovers += 1;
     }
-  } else if (bestIdx !== sim.current) {
-    sim.current = bestIdx;
-    handover = true;
-  }
 
-  let outage = false;
-  let snrA = -10;
-  if (sim.current === -1) {
-    outage = true;
-  } else {
-    const act = metrics[sim.current];
-    snrA = act.snr;
-    outage = act.snr < cfg.minSnr;
-  }
+    const snrA = agent.current === -1 ? -10 : metrics[agent.current].snr;
+    agent.snrSeries.push(snrA);
+    if (agent.snrSeries.length > sim.cfg.window) agent.snrSeries.shift();
+    agent.activeSeries.push(agent.current);
+    if (agent.activeSeries.length > sim.cfg.window) agent.activeSeries.shift();
+    agent.bestSeries.push(bestIdx);
+    if (agent.bestSeries.length > sim.cfg.window) agent.bestSeries.shift();
 
-  const pushTrim = (arr, v) => {
-    arr.push(v);
-    if (arr.length > cfg.window) arr.shift();
-  };
-  pushTrim(sim.active, sim.current);
-  pushTrim(sim.best, bestIdx);
-  pushTrim(sim.snrActive, snrA);
-  pushTrim(sim.outages, outage);
-  pushTrim(sim.handoverAt, handover);
+    agent.snrSum += snrA;
+    agent.stepCount += 1;
 
-  const baselineThreshold = cfg.baselineHyst;
-  let baseHandover = false;
-  if (sim.baseCurrent === -1) {
-    if (bestIdx !== -1 && bestMetric.snr > cfg.minSnr) {
-      sim.baseCurrent = bestIdx;
-      baseHandover = true;
+    const base = agent.baseline;
+    if (base.current === -1) {
+      if (bestIdx !== -1 && metrics[bestIdx].snr >= sim.cfg.minSnr) {
+        base.current = bestIdx;
+      }
+    } else if (bestIdx !== -1 && bestIdx !== base.current) {
+      const curSnr = metrics[base.current].snr;
+      const bestSnr = metrics[bestIdx].snr;
+      if (bestSnr > curSnr + sim.cfg.baselineHyst) {
+        base.current = bestIdx;
+        base.handovers += 1;
+      }
     }
-  } else {
-    const curBaseSnr = metrics[sim.baseCurrent].snr;
-    if (bestIdx !== sim.baseCurrent && bestMetric.snr > curBaseSnr + baselineThreshold) {
-      sim.baseCurrent = bestIdx;
-      sim.baseHandovers++;
-      baseHandover = true;
-    }
-  }
-  pushTrim(sim.baseHandoverAt, baseHandover);
-  pushTrim(sim.snrBaseline, sim.baseCurrent !== -1 ? metrics[sim.baseCurrent].snr : -15);
 
-  sim.modelSnrSum += (sim.current !== -1 ? metrics[sim.current].snr : -15);
-  sim.baseSnrSum += (sim.baseCurrent !== -1 ? metrics[sim.baseCurrent].snr : -15);
+    const snrB = base.current === -1 ? -10 : metrics[base.current].snr;
+    base.snrSeries.push(snrB);
+    if (base.snrSeries.length > sim.cfg.window) base.snrSeries.shift();
+    base.snrSum += snrB;
+    base.stepCount += 1;
+  }
 
   sim.step += 1;
-  sim.t += cfg.dt;
-  if (handover) sim.lastHandoverStep = sim.step;
+  sim.t += sim.cfg.dt;
+  sim.lastStepRuntimeMs = Math.round(performance.now() - tStart);
+  updateModelHealthPanel();
 }
 
 function renderMetrics(sim) {
-  const steps = sim.step || 1;
-  const handovers = sim.handoverAt.filter(Boolean).length;
-  const avgSnrModel = sim.modelSnrSum / steps;
-  const avgSnrBase = sim.baseSnrSum / steps;
-
-  $("hoModel").textContent = handovers;
-  $("snrModel").textContent = avgSnrModel.toFixed(1) + " dB";
-  $("hoBase").textContent = sim.baseHandovers;
-  $("snrBase").textContent = avgSnrBase.toFixed(1) + " dB";
+  for (const engine of Object.values(ENGINES)) {
+    const agent = sim.agents[engine.key];
+    if (!agent || !agent.ready || agent.stepCount === 0) {
+      if (engine.metricIds.ho) engine.metricIds.ho.textContent = "-";
+      if (engine.metricIds.snr) engine.metricIds.snr.textContent = "-";
+      if (engine.metricIds.hoBase) engine.metricIds.hoBase.textContent = "-";
+      if (engine.metricIds.snrBase) engine.metricIds.snrBase.textContent = "-";
+      continue;
+    }
+    const avgSnr = agent.snrSum / agent.stepCount;
+    const baseAvgSnr = agent.baseline.snrSum / Math.max(agent.baseline.stepCount, 1);
+    if (engine.metricIds.ho) engine.metricIds.ho.textContent = String(agent.handovers);
+    if (engine.metricIds.snr) engine.metricIds.snr.textContent = `${avgSnr.toFixed(1)} dB`;
+    if (engine.metricIds.hoBase) engine.metricIds.hoBase.textContent = String(agent.baseline.handovers);
+    if (engine.metricIds.snrBase) engine.metricIds.snrBase.textContent = `${baseAvgSnr.toFixed(1)} dB`;
+  }
 }
 
 const stars = Array.from({ length: 120 }, () => ({
-  x: Math.random(), y: Math.random(),
+  x: Math.random(),
+  y: Math.random(),
   r: Math.random() * 1.6 + 0.4,
   a: Math.random() * 0.6 + 0.2,
 }));
@@ -450,180 +609,165 @@ function drawMap(sim, tNow) {
   const ctx = mapCanvas.getContext("2d");
   const w = mapCanvas.width;
   const h = mapCanvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#1e293b";
   ctx.fillRect(0, 0, w, h);
 
-  stars.forEach(s => {
+  stars.forEach((s) => {
     ctx.fillStyle = `rgba(148, 163, 184, ${s.a})`;
     ctx.beginPath();
     ctx.arc(s.x * w, s.y * h, s.r, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  const user = userPosition(sim.ueTravel, sim.phaseOffset);
-  const cx = w / 2;
-  const cy = h / 2;
-  const activeIdx = sim.active[sim.active.length - 1] ?? -1;
-  const bestIdx = sim.best[sim.best.length - 1] ?? -1;
-
   ctx.fillStyle = "#ffffff";
   ctx.beginPath();
   ctx.arc(cx, cy, 135, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.strokeStyle = "rgba(30, 41, 59, 0.4)";
+  ctx.strokeStyle = "rgba(30,41,59,0.4)";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(cx, cy, 135, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.lineWidth = 1;
 
-  sim.sats.forEach((sat, i) => {
-    const pos = satPosition(sat, tNow);
-    const x = cx + pos.x;
-    const y = cy + pos.y;
-    const isActive = i === activeIdx;
-    const isBest = i === bestIdx;
-    const isCandidate = isBest && !isActive;
-    const maxDim = isActive ? 36 : 28;
-
-    let radius = isActive ? 8 : 6;
-    let dw = maxDim;
-    let dh = maxDim;
-
+  const satPositions = sim.sats.map((sat) => satPosition(sat, tNow));
+  satPositions.forEach((p) => {
+    const x = cx + p.x;
+    const y = cy + p.y;
+    const maxDim = 28;
     if (satImage && satImage.complete && satImage.naturalWidth > 0) {
       const scale = maxDim / Math.max(satImage.naturalWidth, satImage.naturalHeight);
-      dw = satImage.naturalWidth * scale;
-      dh = satImage.naturalHeight * scale;
-      radius = Math.max(dw, dh) / 2;
+      const dw = satImage.naturalWidth * scale;
+      const dh = satImage.naturalHeight * scale;
       ctx.drawImage(satImage, x - dw / 2, y - dh / 2, dw, dh);
-
-      if (isActive || isCandidate) {
-        ctx.strokeStyle = isActive ? "rgba(2, 132, 199, 0.9)" : "rgba(220, 38, 38, 0.85)";
-        ctx.lineWidth = isActive ? 2 : 1.5;
-        ctx.strokeRect(x - dw / 2 - 1, y - dh / 2 - 1, dw + 2, dh + 2);
-      }
     } else {
-      ctx.fillStyle = isActive ? "#0284c7" : isCandidate ? "#dc2626" : "#cbd5e1";
+      ctx.fillStyle = "#cbd5e1";
       ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
       ctx.fill();
-    }
-
-    const snrVal = sim.lastMetrics?.[i]?.snr ?? -15;
-    const snrNorm = clamp((snrVal + 5) / 35, 0, 1);
-    ctx.strokeStyle = isActive
-      ? `rgba(14,165,233,${snrNorm * 0.4})`
-      : `rgba(148,163,184,${snrNorm * 0.2})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + snrNorm * 18, 0, Math.PI * 2);
-    ctx.stroke();
-
-    if (isActive || isCandidate) {
-      ctx.strokeStyle = isActive ? "rgba(2, 132, 199, 0.45)" : "rgba(220, 38, 38, 0.35)";
-      if (isCandidate && !isActive) ctx.setLineDash([4, 4]);
-      else ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(cx + user.x, cy + user.y);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
     }
   });
 
-  const pulse = (performance.now() / 1000) % 3;
-  ctx.strokeStyle = `rgba(30, 41, 59, ${0.45 - pulse * 0.1})`;
-  ctx.beginPath();
-  ctx.arc(cx + user.x, cy + user.y, 10 + pulse * 12, 0, Math.PI * 2);
-  ctx.stroke();
+  const fairEval = Boolean(sim.cfg.fairEval);
+  for (const engine of Object.values(ENGINES)) {
+    const agent = sim.agents[engine.key];
+    if (!agent || !agent.ready) continue;
+    const pos = fairEval ? sim.sharedUserPos : agent.currentPos;
+    const ux = cx + pos.x;
+    const uy = cy + pos.y;
+    const activeSat = agent.current;
+    if (activeSat !== -1) {
+      const satPos = satPositions[activeSat];
+      ctx.strokeStyle = engine.color;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(ux, uy);
+      ctx.lineTo(cx + satPos.x, cy + satPos.y);
+      ctx.stroke();
+    }
 
-  ctx.fillStyle = "#1e293b";
-  ctx.beginPath();
-  ctx.arc(cx + user.x, cy + user.y, 6, 0, Math.PI * 2);
-  ctx.fill();
+    if (!fairEval) {
+      ctx.fillStyle = engine.color;
+      ctx.beginPath();
+      ctx.arc(ux, uy, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (fairEval) {
+    const ux = cx + sim.sharedUserPos.x;
+    const uy = cy + sim.sharedUserPos.y;
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.arc(ux, uy, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(ux, uy, 9, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
 }
 
 function drawSnr(sim) {
-  const ctx = snrCanvas.getContext("2d");
-  const w = snrCanvas.width;
-  const h = snrCanvas.height;
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, w, h);
+  const readyAgents = Object.values(sim.agents).filter((a) => a.ready);
+  
+  for (const engine of Object.values(ENGINES)) {
+    const agent = sim.agents[engine.key];
+    const canvas = document.getElementById(engine.chartId);
+    if (!canvas || !agent || !agent.ready || agent.snrSeries.length === 0) continue;
+    
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    
+    const allValues = [...agent.snrSeries, ...agent.baseline.snrSeries];
+    let actualMax = allValues.length ? Math.max(...allValues) : 10;
+    let actualMin = allValues.length ? Math.min(...allValues) : -5;
+    const span = actualMax - actualMin;
+    const padding = Math.max(span * 0.1, 2);
+    const maxSnr = actualMax + padding;
+    const minSnr = actualMin - padding;
+    const maxDelta = Math.max(maxSnr - minSnr, 1);
+    const toY = (v) => h - 20 - ((v - minSnr) / maxDelta) * (h - 40);
 
-  let actualMax = Math.max(...sim.snrBaseline, ...sim.snrActive);
-  let actualMin = Math.min(...sim.snrBaseline, ...sim.snrActive);
-  if (!isFinite(actualMax)) {
-    actualMax = 10;
-    actualMin = -5;
-  }
-
-  const span = actualMax - actualMin;
-  const padding = Math.max(span * 0.1, 2);
-  const maxSnr = actualMax + padding;
-  const minSnr = actualMin - padding;
-  const maxDelta = Math.max(maxSnr - minSnr, 1);
-  const toY = (v) => h - 20 - ((v - minSnr) / maxDelta) * (h - 90);
-
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.05)";
-  ctx.beginPath();
-  for (let i = 0; i < 6; i++) {
-    const y = 70 + (i / 5) * (h - 90);
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-  }
-  ctx.stroke();
-
-  ctx.lineWidth = 3;
-  ctx.lineJoin = "round";
-  const plotW = w - 40;
-  const wStep = plotW / sim.cfg.window;
-  const getX = (i) => i * wStep;
-
-  ctx.strokeStyle = "#0284c7";
-  ctx.beginPath();
-  sim.snrActive.forEach((v, i) => {
-    if (i === 0) ctx.moveTo(getX(i), toY(v));
-    else ctx.lineTo(getX(i), toY(v));
-  });
-  ctx.stroke();
-
-  ctx.strokeStyle = "#dc2626";
-  ctx.beginPath();
-  sim.snrBaseline.forEach((v, i) => {
-    if (i === 0) ctx.moveTo(getX(i), toY(v));
-    else ctx.lineTo(getX(i), toY(v));
-  });
-  ctx.stroke();
-
-  const lastIdx = sim.snrActive.length - 1;
-  if (lastIdx >= 0) {
-    ctx.fillStyle = "#0284c7";
+    ctx.strokeStyle = "rgba(0,0,0,0.05)";
     ctx.beginPath();
-    ctx.arc(getX(lastIdx), toY(sim.snrActive[lastIdx]), 6, 0, Math.PI * 2);
-    ctx.fill();
+    for (let i = 0; i < 6; i++) {
+      const y = 20 + (i / 5) * (h - 40);
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+    }
+    ctx.stroke();
 
-    ctx.fillStyle = "#dc2626";
+    const plotW = w - 40;
+    const wStep = plotW / Math.max(sim.cfg.window, 1);
+
+    if (agent.baseline.snrSeries.length > 0) {
+      ctx.strokeStyle = "#b83d31";
+      ctx.lineWidth = 2.0;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      agent.baseline.snrSeries.forEach((v, i) => {
+        const x = i * wStep;
+        if (i === 0) ctx.moveTo(x, toY(v));
+        else ctx.lineTo(x, toY(v));
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.strokeStyle = engine.color;
+    ctx.lineWidth = 2.6;
     ctx.beginPath();
-    ctx.arc(getX(lastIdx), toY(sim.snrBaseline[lastIdx]), 6, 0, Math.PI * 2);
+    agent.snrSeries.forEach((v, i) => {
+      const x = i * wStep;
+      if (i === 0) ctx.moveTo(x, toY(v));
+      else ctx.lineTo(x, toY(v));
+    });
+    ctx.stroke();
+    
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillStyle = engine.color;
+    ctx.beginPath();
+    ctx.arc(24, 15, 4, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = "#334155";
+    ctx.fillText("AI Signal", 34, 19);
+    
+    ctx.fillStyle = "#b83d31";
+    ctx.beginPath();
+    ctx.arc(104, 15, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#334155";
+    ctx.fillText("Baseline", 114, 19);
   }
-
-  ctx.fillStyle = "#334155";
-  ctx.font = "bold 18px sans-serif";
-  ctx.fillStyle = "#0284c7";
-  ctx.beginPath();
-  ctx.arc(30, 26, 6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillText("CatBoost Signal", 45, 32);
-
-  ctx.fillStyle = "#dc2626";
-  ctx.beginPath();
-  ctx.arc(220, 26, 6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillText("Baseline Signal", 235, 32);
 }
 
 let currentSim = null;
@@ -634,31 +778,33 @@ let stepInFlight = false;
 let tickStarted = false;
 
 function updateStatus(sim) {
-  const active = sim.active[sim.active.length - 1] ?? -1;
-  const best = sim.best[sim.best.length - 1] ?? -1;
-  const outage = sim.outages[sim.outages.length - 1] ?? false;
-  const handover = sim.handoverAt[sim.handoverAt.length - 1] ?? false;
-  const score = (sim.lastScore * 100).toFixed(1);
-  let message = [
-    active === -1 ? "No connection" : `Connected to Satellite ${active + 1}`,
-    best === -1 ? "" : `Best: Satellite ${best + 1}`,
-    `Velocity: ${(sim.currentUEVelocity * 3.6).toFixed(1)} km/h`,
-    handover ? "Switch occurred." : "",
-    outage ? "Signal weak." : "Signal healthy.",
-    `Model HO score: ${score}%`,
-  ].filter(Boolean).join(" | ");
-
-  if (funModeToggle && funModeToggle.checked && sim.step % 40 === 0 && sim.step > 0) {
-    const note = funStatusLines[(sim.step / 40) % funStatusLines.length];
-    message += ` | ${note}`;
+  const chunks = [];
+  chunks.push(sim.cfg.fairEval ? "Mode: Fair Shared UE" : "Mode: Demo Multi-UE");
+  for (const engine of Object.values(ENGINES)) {
+    const agent = sim.agents[engine.key];
+    if (!agent.ready) continue;
+    const active = agent.current;
+    
+    let info = "";
+    if (typeof agent.lastScore === "number") {
+      const decisionText = agent.lastDecisionLabel === 1 ? "Switch" : "Stay";
+      info = `${decisionText}, conf ${(agent.lastScore * 100).toFixed(1)}%`;
+    } else {
+      info = "Pending inference...";
+    }
+    chunks.push(`${engine.label}: Sat ${active === -1 ? "-" : active + 1}, ${info}`);
   }
+  if (chunks.length === 0) {
+    statusLine.textContent = "No model ready. Add missing scaler/model paths.";
+    return;
+  }
+  let message = chunks.join(" | ");
   statusLine.textContent = message;
 }
 
 function render() {
   if (!currentSim) return;
-  const tNow = currentSim.t;
-  drawMap(currentSim, tNow);
+  drawMap(currentSim, currentSim.t);
   drawSnr(currentSim);
   renderMetrics(currentSim);
   updateStatus(currentSim);
@@ -666,13 +812,13 @@ function render() {
 }
 
 function maybeCompleteSimulation(sim) {
-  if (!sim || sim.completed) return;
+  if (sim.completed) return;
   if (sim.step >= sim.cfg.window) {
     sim.completed = true;
     isPlaying = false;
-    playBtn.textContent = "Play";
+    playBtn.textContent = "Play Execution";
     showSummary(sim);
-    statusLine.textContent = "Simulation complete. Review summary and export results if needed.";
+    statusLine.textContent = "Simulation complete. Waiting for rerun.";
   }
 }
 
@@ -704,7 +850,6 @@ function tick(ts) {
 async function run() {
   hideSummary();
   await loadModels();
-  if (modelError) return;
   const cfg = readConfig();
   currentSim = createLiveSim(cfg);
   stepMs = Number(speedMsInput.value || 220);
@@ -716,6 +861,21 @@ async function run() {
     tickStarted = true;
     requestAnimationFrame(tick);
   }
+}
+
+function resetAllControls() {
+  $("satCount").value = defaultControls.satCount;
+  $("ueSpeed").value = defaultControls.ueSpeed;
+  $("steps").value = defaultControls.steps;
+  $("baselineHyst").value = defaultControls.baselineHyst;
+  $("speedMs").value = defaultControls.speedMs;
+  deterministicToggle.checked = defaultControls.deterministic;
+  if (fairEvalToggle) fairEvalToggle.checked = defaultControls.fairEval;
+  fixedSeedInput.value = defaultControls.seed;
+  fixedSeedInput.disabled = !defaultControls.deterministic;
+  updateSliderLabels();
+  resetMetricViews();
+  run();
 }
 
 function onPlayToggle() {
@@ -747,20 +907,12 @@ speedMsInput.addEventListener("input", () => {
   stepMs = Number(speedMsInput.value);
   updateSliderLabels();
 });
-ueSpeedInput.addEventListener("input", (e) => {
-  updateSliderLabels();
-  if (currentSim) {
-    const newSpeed = Number(e.target.value) / 3.6;
-    currentSim.cfg.speed = newSpeed;
-    currentSim.currentUEVelocity = newSpeed;
-  }
-});
+ueSpeedInput.addEventListener("input", updateSliderLabels);
 baselineHystInput.addEventListener("input", updateSliderLabels);
 deterministicToggle.addEventListener("change", onDeterministicToggle);
+if (fairEvalToggle) fairEvalToggle.addEventListener("change", run);
 sidebarToggle.addEventListener("click", onSidebarToggle);
-funModeToggle.addEventListener("change", () => setFunMode(funModeToggle.checked));
-
 updateSliderLabels();
 onDeterministicToggle();
-setFunMode(funModeToggle.checked);
+resetMetricViews();
 loadModels().then(run);

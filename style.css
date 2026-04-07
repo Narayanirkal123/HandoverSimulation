@@ -300,6 +300,7 @@ input[type="range"] {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  margin-bottom: 10px;
 }
 
 .health-item {
@@ -326,6 +327,39 @@ input[type="range"] {
   margin-top: 2px;
 }
 
+.model-list {
+  display: grid;
+  gap: 6px;
+}
+
+.model-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 7px 8px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: #fdfefd;
+}
+
+.model-pill {
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  background: #d8efe0;
+  color: #1f6b4a;
+}
+
+.model-pill.pending {
+  background: #f2e8d3;
+  color: #8c6420;
+}
+
 .monitor-area {
   padding: var(--pad);
   display: flex;
@@ -336,7 +370,7 @@ input[type="range"] {
 
 .metrics-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 14px;
 }
 
@@ -354,6 +388,14 @@ input[type="range"] {
 
 .metric-box.base {
   border-top: 4px solid var(--color-baseline);
+}
+
+.metric-box.gbm {
+  border-top: 4px solid #ca8a04;
+}
+
+.metric-box.xgb {
+  border-top: 4px solid #7c3aed;
 }
 
 .metric-head {
@@ -391,9 +433,19 @@ input[type="range"] {
   color: #983328;
 }
 
+.chip-xgb {
+  background: #eee6fb;
+  color: #6d28d9;
+}
+
+.chip-gbm {
+  background: #fbf1d9;
+  color: #9a6708;
+}
+
 .metric-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -418,6 +470,28 @@ input[type="range"] {
   color: var(--text-main);
 }
 
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-row:first-child {
+  padding-bottom: 6px;
+  border-bottom: 1px dotted var(--border-color);
+  margin-bottom: 6px;
+}
+
+.sub-label {
+  font-size: 0.68rem;
+  color: #72847a;
+}
+
+.sub-value {
+  font-size: 0.9rem;
+  color: #536d5e;
+}
+
 .summary-panel {
   border: 1px solid #b7d4c1;
   background: #eaf4ee;
@@ -434,7 +508,7 @@ input[type="range"] {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
 
@@ -517,7 +591,9 @@ body.fun-mode canvas#map {
 }
 
 .charts-footer {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .chart-box {
@@ -537,9 +613,9 @@ body.fun-mode canvas#map {
   margin-bottom: 10px;
 }
 
-canvas#snrChart {
+.chart-box canvas {
   width: 100%;
-  height: 220px;
+  height: 150px;
   background: #ffffff;
   border: 1px solid #edf3ef;
   border-radius: 10px;
@@ -598,6 +674,10 @@ canvas#snrChart {
 
   .summary-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .metrics-row {
+    grid-template-columns: 1fr;
   }
 }
 

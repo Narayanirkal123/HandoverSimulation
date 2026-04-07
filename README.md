@@ -1,22 +1,25 @@
 # NTN Handover Optimization Simulator
 
-NTN Handover Simulator is a browser-based visualization dashboard and simulation tool that models Non-Terrestrial Network (NTN) satellite handovers for User Equipment (UE). The tool benchmarks classical heuristic threshold-based handover logic against a highly-optimized CatBoost Machine Learning algorithm to minimize handover failures, reduce signal loss, and manage the "ping-pong" effect.
+NTN Handover Simulator is a browser-based visualization dashboard and simulation tool that models Non-Terrestrial Network (NTN) satellite handovers. The tool rigorously benchmarks classical heuristic threshold-based handover logic against three highly-optimized Machine Learning algorithms (CatBoost, XGBoost, and GradientBoost) to minimize handover failures, reduce signal loss, and manage the "ping-pong" effect.
 
 ## Features & Capabilities
 
-- **Live Orbital Topography & Movement**: A visual canvas rendering User Equipment (UE) constrained within a defined ground boundary, surrounded by a realistic satellite constellation orbiting within a deep space layer.
-- **Real-Time Signal Quality (SNR/RSRP) Tracking**: Dynamic graphs monitor instantaneous Signal-to-Noise Ratio (SNR) of the current serving node vs the best candidate satellite as the UE traverses the map.
-- **On-Device Inference**: Uses ONNX Runtime Web to run inference locally in the browser. 
-- **CatBoost Optimization**: Implements an optimized decision boundary trained on 200,000 temporal rows of simulated NTN data.
+- **Multiple AI Models**: Continuously evaluates CatBoost, XGBoost, and GradientBoost decision boundaries concurrently.
+- **Independent Sovereign Evaluation**: Executes in a multi-agent mode where each AI model is assigned its own independent User Equipment (UE) with unique velocities and starting positions. Each model is rigorously benchmarked against a dedicated "shadow" mathematical baseline mimicking its exact spatial trajectory for absolute fairness.
+- **Real-Time Signal Quality Tracking**: Dynamic line graphs locally monitor the instantaneous Signal-to-Noise Ratio (SNR) of the AI's current serving node versus what the heuristic baseline would have achieved on that exact same path.
+- **On-Device Inference**: Uses ONNX Runtime Web to run all multi-model inferences locally in the browser, extracting and projecting features seamlessly. 
+- **Detailed Post-Simulation Analytics**: Outputs absolute objective performance data (Handovers Executed, final Average SNR in dB) for each AI model against its custom baseline.
 
 ## KPI Improvements (ML vs. Baseline)
 
-Based on the embedded CatBoost algorithm, the NTN Handover Simulator achieves the following performance improvements over traditional rule-based operations:
+Based on the embedded CatBoost algorithm, the NTN Handover Simulator previously mapped the following performance improvements over traditional rule-based operations:
 
 - **Total Handovers**: Reduced by **52.87%**
 - **Ping-Pong Effect**: Reduced by **71.82%** (successive handovers within 10 operation steps)
 - **HO Failure Rate**: Reduced by **37.97%**
 - **Mean Time Between Handovers (MTBH)**: Increased by **132.30%** (from 74.4 steps to 172.9 steps)
+
+*Note: Initial KPI benchmarks were generated prior to moving to full Multi-Agent independent flight patterns. Live dashboard outputs represent dynamic inference comparisons.*
 
 ## How to Run the Simulator
 
@@ -31,13 +34,14 @@ Due to browser security policies regarding WebAssembly (WASM) and ONNX model fil
 
 ## Execution Controls
 
-- **UE Velocity**: Manipulate this slider in real-time to adjust the speed of the User Equipment traversing the map. (Adjustments apply instantly without simulator restart)
+- **UE Velocity**: Manipulate this slider in real-time to adjust the base speed of the User Equipment traversing the map.
+- **Baseline Hysteresis**: Modify the threshold barrier (in dB) required before the heuristic baseline opts for a handover.
 - **Simulation Length**: Set the total steps executed per simulation run.
-- **Playback Interval**: Adjust the execution speed (delay in ms) of the simulation rendering.
-- **Reset Orbit Data / Pause Execution**: Recalculate orbits rapidly or freeze logic logic to debug scenarios manually.
+- **Playback Interval**: Adjust the execution speed (delay in ms) of the visual renderer.
+- **Deterministic Playback**: Toggle the ability to lock random seeds to generate absolutely reproducible orbits and trajectory paths.
 
 ## Technologies Used
 
-- **HTML5/Vanilla CSS/JavaScript**: Designed systematically as a high-contrast human-centric engineering dashboard. Solid slate/navy palettes emphasize readability over flashy "AI" graphics.
-- **ONNX Runtime Web (`ort.min.js`)**: Executes the pre-trained `.onnx` models entirely on the client, eliminating server-side rendering latency.
-- **CatBoost**: Model training performed natively in python, exported through a pipeline to standard ONNX protocols for broad browser compatibility.
+- **HTML5/Vanilla CSS/JavaScript**: Designed systematically as a high-contrast human-centric engineering dashboard. Solid slate/navy palettes emphasize readability over flashy components.
+- **ONNX Runtime Web (`ort.min.js`)**: Executes the pre-trained `.onnx` models entirely on the client without invoking network payload bottlenecks.
+- **CatBoost / XGBoost / GradientBoost**: Decision trees engineered in Python, structured, scaled, and compiled down to standard ONNX endpoints for seamless Javascript consumption.

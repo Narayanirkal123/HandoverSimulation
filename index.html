@@ -10,7 +10,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=20260407-2" />
 </head>
 
 <body>
@@ -27,14 +27,6 @@
 
     <div class="dashboard">
         <aside id="controlSidebar" class="sidebar">
-            <section class="panel-section fun-panel">
-                <span class="section-label">Experience</span>
-                <label class="toggle-line">
-                    <input id="funModeToggle" type="checkbox" checked />
-                    <span>Fun visual mode</span>
-                </label>
-                <p class="helper-text">Keeps simulation logic unchanged. Adds playful UI motion and visual emphasis.</p>
-            </section>
 
             <section class="panel-section">
                 <span class="section-label">Simulation Parameters</span>
@@ -74,6 +66,13 @@
                         <input id="deterministicToggle" type="checkbox" />
                         <span>Deterministic mode (fixed seed)</span>
                     </label>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-line">
+                        <input id="fairEvalToggle" type="checkbox" />
+                        <span>Fair comparison mode (shared UE)</span>
+                    </label>
+                    <p class="helper-text">All models are evaluated on the same UE trajectory and same channel snapshot.</p>
                 </div>
                 <div class="form-group">
                     <label>Seed value</label>
@@ -118,6 +117,20 @@
                         <span id="healthLastInfer" class="health-v">-</span>
                     </div>
                 </div>
+                <div class="model-list">
+                    <div class="model-row">
+                        <span>CatBoost</span>
+                        <span id="modelStatusCat" class="model-pill">Ready</span>
+                    </div>
+                    <div class="model-row">
+                        <span>XGBoost</span>
+                        <span id="modelStatusXgb" class="model-pill pending">Pending Path</span>
+                    </div>
+                    <div class="model-row">
+                        <span>GradientBoost</span>
+                        <span id="modelStatusGbm" class="model-pill pending">Pending Path</span>
+                    </div>
+                </div>
             </section>
 
         </aside>
@@ -126,74 +139,123 @@
             <div class="metrics-row">
                 <div class="metric-box ai">
                     <div class="metric-head">
-                        <span class="metric-title">Model-Driven Serving (AI)</span>
+                        <span class="metric-title">CatBoost UE</span>
                         <span class="chip-status chip-ai">Active</span>
                     </div>
                     <div class="metric-grid">
                         <div class="metric-stat">
-                            <span class="stat-label">Handovers Executed</span>
-                            <span id="hoModel" class="stat-value">-</span>
+                            <div class="stat-row">
+                                <span class="stat-label">AI Handovers Executed</span>
+                                <span id="hoCat" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label sub-label">Baseline Heuristic Tracker</span>
+                                <span id="hoCatBase" class="stat-value sub-value">-</span>
+                            </div>
                         </div>
                         <div class="metric-stat">
-                            <span class="stat-label">Average SNR (dB)</span>
-                            <span id="snrModel" class="stat-value">-</span>
+                            <div class="stat-row">
+                                <span class="stat-label">AI Average SNR (dB)</span>
+                                <span id="snrCat" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label sub-label">Baseline Heuristic Tracker</span>
+                                <span id="snrCatBase" class="stat-value sub-value">-</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="metric-box base">
+                <div class="metric-box xgb">
                     <div class="metric-head">
-                        <span class="metric-title">Baseline Heuristic Strategy</span>
-                        <span class="chip-status chip-base">Active</span>
+                        <span class="metric-title">XGBoost UE</span>
+                        <span class="chip-status chip-xgb">Active</span>
                     </div>
                     <div class="metric-grid">
                         <div class="metric-stat">
-                            <span class="stat-label">Expected Handovers</span>
-                            <span id="hoBase" class="stat-value">-</span>
+                            <div class="stat-row">
+                                <span class="stat-label">AI Handovers Executed</span>
+                                <span id="hoXgb" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label sub-label">Baseline Heuristic Tracker</span>
+                                <span id="hoXgbBase" class="stat-value sub-value">-</span>
+                            </div>
                         </div>
                         <div class="metric-stat">
-                            <span class="stat-label">Average SNR (dB)</span>
-                            <span id="snrBase" class="stat-value">-</span>
+                            <div class="stat-row">
+                                <span class="stat-label">AI Average SNR (dB)</span>
+                                <span id="snrXgb" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label sub-label">Baseline Heuristic Tracker</span>
+                                <span id="snrXgbBase" class="stat-value sub-value">-</span>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <div class="metric-box gbm">
+                    <div class="metric-head">
+                        <span class="metric-title">GradientBoost UE</span>
+                        <span class="chip-status chip-gbm">Active</span>
+                    </div>
+                    <div class="metric-grid">
+                        <div class="metric-stat">
+                            <div class="stat-row">
+                                <span class="stat-label">AI Handovers Executed</span>
+                                <span id="hoGbm" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label sub-label">Baseline Heuristic Tracker</span>
+                                <span id="hoGbmBase" class="stat-value sub-value">-</span>
+                            </div>
+                        </div>
+                        <div class="metric-stat">
+                            <div class="stat-row">
+                                <span class="stat-label">AI Average SNR (dB)</span>
+                                <span id="snrGbm" class="stat-value">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label sub-label">Baseline Heuristic Tracker</span>
+                                <span id="snrGbmBase" class="stat-value sub-value">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
             </div>
 
             <section id="summaryPanel" class="summary-panel hidden">
                 <h3>Simulation Complete</h3>
                 <div class="summary-grid">
-                    <div class="summary-item">
-                        <span class="summary-label">AI Handovers</span>
-                        <span id="summaryAiHo" class="summary-value">-</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="summary-label">Baseline Handovers</span>
-                        <span id="summaryBaseHo" class="summary-value">-</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="summary-label">Avg SNR Improvement</span>
-                        <span id="summarySnrDelta" class="summary-value">-</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="summary-label">Handover Reduction</span>
-                        <span id="summaryHoDelta" class="summary-value">-</span>
-                    </div>
                 </div>
             </section>
 
             <section class="visual-container">
                 <canvas id="map" width="1600" height="600"></canvas>
                 <div class="map-overlay">
-                    <div class="legend-item"><span class="dot" style="background: var(--color-ai)"></span> Serving Node</div>
+                    <div class="legend-item"><span class="dot" style="background: var(--color-ai)"></span> CatBoost UE Link</div>
+                    <div class="legend-item"><span class="dot" style="background: #7c3aed;"></span> XGBoost UE Link</div>
+                    <div class="legend-item"><span class="dot" style="background: #ca8a04;"></span> GradBoost UE Link</div>
                     <div class="legend-item"><img src="Sat.png" width="18" height="18" alt="Satellite" class="legend-sat"> Orbital Satellites</div>
-                    <div class="legend-item"><span class="dot" style="background: #1e293b;"></span> User Equipment</div>
+                    <div class="legend-item"><span class="dot" style="background: #1e293b;"></span> UE Position</div>
                 </div>
             </section>
 
             <section class="charts-footer">
                 <div class="chart-box">
-                    <div class="chart-title">Link Signal Quality (dB)</div>
-                    <canvas id="snrChart" width="1200" height="240"></canvas>
+                    <div class="chart-title">CatBoost Link Quality</div>
+                    <canvas id="snrChartCat" width="1200" height="150"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">XGBoost Link Quality</div>
+                    <canvas id="snrChartXgb" width="1200" height="150"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">GradientBoost Link Quality</div>
+                    <canvas id="snrChartGbm" width="1200" height="150"></canvas>
                 </div>
             </section>
 
@@ -203,23 +265,22 @@
                 <div class="info-grid">
                     <div class="info-item info-wide">
                         <h3>System Description</h3>
-                        <p>NTN Handover Simulator is a Non-Terrestrial Network (NTN) simulation dashboard designed to
-                            visualize how emerging AI predictive models optimize User Equipment (UE) satellite handovers
-                            compared to standard, naive RSRP threshold-based switching. It continuously models orbital
-                            distance paths, free-space path loss, user equipment velocity constraints, and temporal
-                            fading natively in your browser.</p>
+                        <p>NTN Handover Simulator is an advanced Non-Terrestrial Network (NTN) simulation dashboard designed to
+                            benchmark various AI predictive models against standard heuristic RSRP threshold-based handovers. 
+                            It dynamically models independent orbital paths, free-space path loss, user equipment velocity constraints, 
+                            and link-quality fading in real-time natively inside your browser.</p>
                     </div>
                     <div class="info-item">
-                        <h3>Operating Principles</h3>
-                        <p>This simulator benchmarks a CatBoost-optimized handover logic against classic threshold-based
-                            policies. The ML model predicts transition viability based on RSRP, SINR, UE velocity, and
-                            elevation trajectories.</p>
+                        <h3>Evaluation Architecture</h3>
+                        <p>This simulator operates in a multi-agent mode where CatBoost, XGBoost, and GradientBoost 
+                           are each assigned their own sovereign User Equipment (UE). Each model is rigorously benchmarked against 
+                           a distinct mathematical baseline mimicking its exact spatial trajectory for absolute fairness.</p>
                     </div>
                     <div class="info-item">
                         <h3>Inference Engine</h3>
-                        <p>Real-time inferences are resolved directly within the browser using ONNX Runtime Web. Live
-                            feature engineering, including RSRP moving averages and normalized temporal factors, feed
-                            into a precise ML decision boundary.</p>
+                        <p>Real-time multi-model inferences are resolved directly within the browser using ONNX Runtime Web. 
+                           Live feature engineering—including RSRP moving averages, spatial distance vectors, and normalized temporal 
+                           parameters—is processed synchronously and fed into each model's continuous decision loop.</p>
                     </div>
                     <div class="info-item">
                         <h3>Glossary</h3>
@@ -233,7 +294,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=20260407-2"></script>
 </body>
 
 </html>
