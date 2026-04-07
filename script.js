@@ -192,9 +192,24 @@ let modelError = null;
 let loadTimeMs = null;
 let lastInferMs = null;
 let lastDecision = "-";
+let modelLoadPromise = null;
 
 async function loadModels() {
-  if (modelReady || modelError) return;
+  if (modelReady) {
+    if (healthModelState) healthModelState.textContent = "Ready";
+    if (healthLoadTime && loadTimeMs !== null) healthLoadTime.textContent = `${loadTimeMs} ms`;
+    return;
+  }
+  if (modelError) {
+    if (healthModelState) healthModelState.textContent = "Error";
+    return;
+  }
+  if (modelLoadPromise) {
+    await modelLoadPromise;
+    return;
+  }
+
+  modelLoadPromise = (async () => {
   try {
     const loadStart = performance.now();
     setLoadingUi(true, "Loading");
@@ -231,7 +246,11 @@ async function loadModels() {
     console.error(err);
   } finally {
     setLoadingUi(false, modelReady ? "Ready" : "Error");
+    modelLoadPromise = null;
   }
+  })();
+
+  await modelLoadPromise;
 }
 
 function buildFeatureVector(bestMetric, cfg, sim) {
