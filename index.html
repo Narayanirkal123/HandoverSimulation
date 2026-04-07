@@ -4,24 +4,38 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>HandoverAI Control Center - Simulation Dashboard</title>
+    <title>NTN Handover Simulator - Control Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
     <header class="app-header">
         <div class="app-title">
-            <span>HandoverAI Control Center</span>
+            <span>NTN Handover Simulator</span>
             <span class="app-subtitle">| LEO Constellation Management Simulation</span>
         </div>
-        <div class="system-status" style="font-size: 0.75rem; font-weight: 700; color: #10b981;">
-            • SYSTEM OPERATIONAL
+        <div class="header-actions">
+            <button id="sidebarToggle" class="mobile-toggle" type="button" aria-expanded="true">Controls</button>
+            <div class="system-status">System Operational</div>
         </div>
     </header>
 
     <div class="dashboard">
-        <!-- Sidebar Controls -->
-        <aside class="sidebar">
+        <aside id="controlSidebar" class="sidebar">
+            <section class="panel-section fun-panel">
+                <span class="section-label">Experience</span>
+                <label class="toggle-line">
+                    <input id="funModeToggle" type="checkbox" checked />
+                    <span>Fun visual mode</span>
+                </label>
+                <p class="helper-text">Keeps simulation logic unchanged. Adds playful UI motion and visual emphasis.</p>
+            </section>
+
             <section class="panel-section">
                 <span class="section-label">Simulation Parameters</span>
                 <div class="form-group">
@@ -29,7 +43,11 @@
                     <input id="satCount" type="number" min="3" max="48" value="12" />
                 </div>
                 <div class="form-group">
-                    <label>UE Velocity (km/h)</label>
+                    <label class="label-row">
+                        <span>UE Velocity (km/h)</span>
+                        <span class="help-tip" title="User Equipment movement speed used in simulation physics and feature generation.">?</span>
+                        <span id="ueSpeedVal" class="input-value">700</span>
+                    </label>
                     <input id="ueSpeed" type="range" min="10" max="1200" value="700" />
                 </div>
                 <div class="form-group">
@@ -37,8 +55,29 @@
                     <input id="steps" type="number" min="60" max="1200" value="300" />
                 </div>
                 <div class="form-group">
-                    <label>Playback Interval (ms)</label>
+                    <label class="label-row">
+                        <span>Baseline HO Hysteresis (dB)</span>
+                        <span class="help-tip" title="Minimum SNR improvement required before the baseline strategy triggers a handover.">?</span>
+                        <span id="baselineHystVal" class="input-value">5.0</span>
+                    </label>
+                    <input id="baselineHyst" type="range" min="1" max="15" value="5" />
+                </div>
+                <div class="form-group">
+                    <label class="label-row">
+                        <span>Playback Interval (ms)</span>
+                        <span id="speedMsVal" class="input-value">220</span>
+                    </label>
                     <input id="speedMs" type="range" min="80" max="600" value="220" />
+                </div>
+                <div class="form-group">
+                    <label class="toggle-line">
+                        <input id="deterministicToggle" type="checkbox" />
+                        <span>Deterministic mode (fixed seed)</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Seed value</label>
+                    <input id="fixedSeed" type="number" min="1" max="999999" value="4242" disabled />
                 </div>
             </section>
 
@@ -48,25 +87,47 @@
                     <button id="runBtn" class="btn primary">Start New Simulation</button>
                     <button id="randomizeBtn" class="btn secondary">Reset Orbit Data</button>
                     <button id="playBtn" class="btn secondary">Pause Execution</button>
+                    <button id="resetAllBtn" class="btn secondary">Reset All</button>
                 </div>
             </section>
 
             <section class="panel-section">
                 <span class="section-label">Step Monitor</span>
-                <div id="stepLabel" style="font-size: 0.85rem; font-weight: 700; color: var(--color-primary); text-align: center; border: 1px dashed var(--border-color); padding: 12px; border-radius: var(--radius);">
+                <div id="stepLabel" class="step-monitor" aria-live="polite">
                     READY TO INITIALIZE
                 </div>
             </section>
+
+            <section class="panel-section">
+                <span class="section-label">Model Health</span>
+                <div class="health-grid">
+                    <div class="health-item">
+                        <span class="health-k">State</span>
+                        <span id="healthModelState" class="health-v">Initializing</span>
+                    </div>
+                    <div class="health-item">
+                        <span class="health-k">Load Time</span>
+                        <span id="healthLoadTime" class="health-v">-</span>
+                    </div>
+                    <div class="health-item">
+                        <span class="health-k">Last Inference</span>
+                        <span id="healthInferLatency" class="health-v">-</span>
+                    </div>
+                    <div class="health-item">
+                        <span class="health-k">Last Inference At</span>
+                        <span id="healthLastInfer" class="health-v">-</span>
+                    </div>
+                </div>
+            </section>
+
         </aside>
 
-        <!-- Main Dashboard Monitoring Area -->
         <main class="monitor-area">
-            <!-- Metrics Monitoring Row -->
             <div class="metrics-row">
                 <div class="metric-box ai">
                     <div class="metric-head">
                         <span class="metric-title">Model-Driven Serving (AI)</span>
-                        <span style="font-size: 0.65rem; background: var(--color-ai); color: white; padding: 2px 6px; border-radius: 4px; font-weight: 700;">ACTIVE</span>
+                        <span class="chip-status chip-ai">Active</span>
                     </div>
                     <div class="metric-grid">
                         <div class="metric-stat">
@@ -83,7 +144,7 @@
                 <div class="metric-box base">
                     <div class="metric-head">
                         <span class="metric-title">Baseline Heuristic Strategy</span>
-                        <span style="font-size: 0.65rem; background: var(--color-baseline); color: white; padding: 2px 6px; border-radius: 4px; font-weight: 700;">ACTIVE</span>
+                        <span class="chip-status chip-base">Active</span>
                     </div>
                     <div class="metric-grid">
                         <div class="metric-stat">
@@ -98,53 +159,79 @@
                 </div>
             </div>
 
-            <!-- Visualization Section -->
+            <section id="summaryPanel" class="summary-panel hidden">
+                <h3>Simulation Complete</h3>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <span class="summary-label">AI Handovers</span>
+                        <span id="summaryAiHo" class="summary-value">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Baseline Handovers</span>
+                        <span id="summaryBaseHo" class="summary-value">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Avg SNR Improvement</span>
+                        <span id="summarySnrDelta" class="summary-value">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Handover Reduction</span>
+                        <span id="summaryHoDelta" class="summary-value">-</span>
+                    </div>
+                </div>
+            </section>
+
             <section class="visual-container">
-                <canvas id="map" width="800" height="600"></canvas>
+                <canvas id="map" width="1600" height="600"></canvas>
                 <div class="map-overlay">
                     <div class="legend-item"><span class="dot" style="background: var(--color-ai)"></span> Serving Node</div>
-                    <div class="legend-item"><span class="dot" style="background: var(--color-baseline)"></span> Target Candidate</div>
-                    <div class="legend-item"><span class="dot" style="background: #cbd5e1; border: 1px solid #94a3b8;"></span> Orbital Satellites</div>
+                    <div class="legend-item"><img src="Sat.png" width="18" height="18" alt="Satellite" class="legend-sat"> Orbital Satellites</div>
                     <div class="legend-item"><span class="dot" style="background: #1e293b;"></span> User Equipment</div>
                 </div>
             </section>
 
-            <!-- Chart Footer Area -->
             <section class="charts-footer">
                 <div class="chart-box">
-                    <div class="chart-title">Connection History (Timeline)</div>
-                    <canvas id="timeline" width="440" height="150"></canvas>
-                </div>
-                <div class="chart-box">
                     <div class="chart-title">Link Signal Quality (dB)</div>
-                    <canvas id="snrChart" width="440" height="150"></canvas>
+                    <canvas id="snrChart" width="1200" height="240"></canvas>
                 </div>
             </section>
 
-            <!-- System Diagnostics & Status -->
-            <div id="statusLine" class="status-summary">System initialized. Awaiting user action.</div>
+            <div id="statusLine" class="status-summary" aria-live="polite">System initialized. Awaiting user action.</div>
 
-            <!-- Detailed Documentation Panel -->
             <section class="info-panel">
                 <div class="info-grid">
+                    <div class="info-item info-wide">
+                        <h3>System Description</h3>
+                        <p>NTN Handover Simulator is a Non-Terrestrial Network (NTN) simulation dashboard designed to
+                            visualize how emerging AI predictive models optimize User Equipment (UE) satellite handovers
+                            compared to standard, naive RSRP threshold-based switching. It continuously models orbital
+                            distance paths, free-space path loss, user equipment velocity constraints, and temporal
+                            fading natively in your browser.</p>
+                    </div>
                     <div class="info-item">
                         <h3>Operating Principles</h3>
-                        <p>This simulator compares CatBoost-optimized handover decisions against classic RSS-based policies. The AI model accounts for RSRP, SINR, UE velocity, and elevation to reduce signal loss during orbital transitions.</p>
+                        <p>This simulator benchmarks a CatBoost-optimized handover logic against classic threshold-based
+                            policies. The ML model predicts transition viability based on RSRP, SINR, UE velocity, and
+                            elevation trajectories.</p>
                     </div>
                     <div class="info-item">
                         <h3>Inference Engine</h3>
-                        <p>Real-time inference is handled by an ONNX model running directly in the browser environment. Feature normalization is performed by a dedicated preprocessing ONNX graph prior to classification.</p>
+                        <p>Real-time inferences are resolved directly within the browser using ONNX Runtime Web. Live
+                            feature engineering, including RSRP moving averages and normalized temporal factors, feed
+                            into a precise ML decision boundary.</p>
+                    </div>
+                    <div class="info-item">
+                        <h3>Glossary</h3>
+                        <p><strong>RSRP:</strong> Reference signal received power.<br>
+                            <strong>SINR:</strong> Signal quality ratio under noise/interference.<br>
+                            <strong>Hysteresis:</strong> Minimum gain needed before switching serving satellite.</p>
                     </div>
                 </div>
             </section>
-
-            <footer class="footer-copy">
-                HandoverAI Monitoring System - Version 2.0.4.5 &copy; 2026 Engineering Lab Operations
-            </footer>
         </main>
     </div>
 
-    <!-- Core Simulation Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
     <script src="script.js"></script>
 </body>
